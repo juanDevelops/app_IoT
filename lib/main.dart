@@ -53,6 +53,12 @@ class _RegistrosState extends State<Registros> {
   String _message = '';
 
   @override
+  void initState() {
+    super.initState();
+    _actualizarRegistros();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
@@ -65,15 +71,10 @@ class _RegistrosState extends State<Registros> {
                 SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: () async {
-                    String resultMessage = await widget.checkInfluxDBConnection();
-                    setState(() {
-                      _message = resultMessage;
-                    });
+                    _actualizarRegistros();
                   },
                   child: Text('Actualizar registros'),
                 ),
-                SizedBox(height: 20),
-                Text(_message),
               ],
             ),
           ),
@@ -85,6 +86,13 @@ class _RegistrosState extends State<Registros> {
       ],
     );
   }
+
+  Future<void> _actualizarRegistros() async {
+    String resultMessage = await widget.checkInfluxDBConnection();
+    setState(() {
+      _message = resultMessage;
+    });
+  }
 }
 
 class ListaWidget extends StatefulWidget {
@@ -94,6 +102,7 @@ class ListaWidget extends StatefulWidget {
 
 class _ListaWidgetState extends State<ListaWidget> {
   DateTime? _selectedDate;
+  TextEditingController _valorController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -107,6 +116,7 @@ class _ListaWidgetState extends State<ListaWidget> {
         ),
         SizedBox(height: 20),
         TextFormField(
+          controller: _valorController,
           decoration: InputDecoration(
             labelText: 'Ingresar valor',
             border: OutlineInputBorder(),
@@ -116,27 +126,12 @@ class _ListaWidgetState extends State<ListaWidget> {
         SizedBox(height: 20),
         _getDatePickerEnabled(),
         SizedBox(height: 20),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {
-                  print('Botón "Ingresar" presionado');
-                },
-                child: Text('Ingresar'),
-              ),
-            ),
-            SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {
-                  print('Botón "Modificar" presionado');
-                },
-                child: Text('Modificar'),
-              ),
-            ),
-          ],
+        ElevatedButton(
+          onPressed: () async {
+            // Lógica para registrar el nuevo dato en InfluxDB
+            await _registrarDato();
+          },
+          child: Text('Ingresar'),
         ),
       ],
     );
@@ -177,6 +172,39 @@ class _ListaWidgetState extends State<ListaWidget> {
       ),
     );
   }
+
+  Future<void> _registrarDato() async {
+    try {
+      var client = InfluxDBClient(
+        url: 'http://192.168.1.74:8086',
+        token: 'NULrwvI8QpgLCHNHP9p0kQzAfPL0j2a31q79-xY5gonKl02we3tAhdCUfGbAg-xs0YG-Y8ooZNR4TXLA0lsnWg==',
+        org: 'TEC Guasave',
+        bucket: 'Test',
+      );
+
+      var writeApi = WriteService(client);
+
+      var point = Point('h2o')
+          .addField('valor', double.parse(_valorController.text))
+          .time(_selectedDate ?? DateTime.now().toUtc());
+
+      await writeApi.write(point).then((value) {
+        print('Registro ingresado exitosamente');
+        // Limpiar el campo de valor después de ingresar el registro
+        _valorController.clear();
+        setState(() {
+          // Limpiar la fecha seleccionada después de ingresar el registro
+          _selectedDate = null;
+        });
+      }).catchError((exception) {
+        print("Error al ingresar el registro:");
+        print(exception);
+      });
+    } catch (error) {
+      print("Error al conectar a InfluxDB:");
+      print(error);
+    }
+  }
 }
 
 class DataTableWidget extends StatelessWidget {
@@ -191,12 +219,9 @@ class DataTableWidget extends StatelessWidget {
     if (message.contains('Conexión exitosa')) {
       var lines = message.split('\n');
       if (lines.length > 1) {
-        var count = int.parse(lines[1].split(' ')[1]);
-        count++;
-
-        for (var i = 0; i < count; i++) {
-          var lineParts = lines[i + 1].split(' ');
-          if (lineParts.length >= 3) {
+        for (var i = 1; i < lines.length - 1; i++) {
+          var lineParts = lines[i].split(' ');
+          if (lineParts.length >= 4) {
             var time = lineParts[2];
             var value = lineParts[3];
             data.add({'Time': time, 'Value': value});
@@ -207,23 +232,27 @@ class DataTableWidget extends StatelessWidget {
 
     return data.isNotEmpty
         ? SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: [
-          DataColumn(label: Text('Time')),
-          DataColumn(label: Text('Value')),
-        ],
-        rows: data.map((entry) {
-          return DataRow(cells: [
-            DataCell(Text(entry['Time'])),
-            DataCell(Text(entry['Value'])),
-          ]);
-        }).toList(),
+      scrollDirection: Axis.vertical,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          columns: [
+            DataColumn(label: Text('Time')),
+            DataColumn(label: Text('Value')),
+          ],
+          rows: data.map((entry) {
+            return DataRow(cells: [
+              DataCell(Text(entry['Time'])),
+              DataCell(Text(entry['Value'])),
+            ]);
+          }).toList(),
+        ),
       ),
     )
         : Container();
   }
 }
+
 
 
 Future<String> checkInfluxDBConnection() async {
@@ -252,6 +281,7 @@ Future<String> checkInfluxDBConnection() async {
     });
 
     if (count > 0) {
+      print(result);
       result = 'Conexión exitosa.\n' + result;
     } else {
       result = 'No se encontraron datos.';
@@ -263,4 +293,3 @@ Future<String> checkInfluxDBConnection() async {
     return 'Error al conectar a InfluxDB: $error';
   }
 }
-
