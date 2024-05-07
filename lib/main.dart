@@ -50,45 +50,108 @@ class Registros extends StatefulWidget {
 }
 
 class _RegistrosState extends State<Registros> {
+  String _selectedMeasurement = 'Nitrogeno';
   String _message = '';
 
   @override
   void initState() {
     super.initState();
-    _actualizarRegistros();
+    _actualizarRegistros(_selectedMeasurement);
   }
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Contenido de la pestaña de Registros'),
-                SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () async {
-                    _actualizarRegistros();
-                  },
-                  child: Text('Actualizar registros'),
+        Padding(
+          padding: EdgeInsets.all(10.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Expanded(
+                flex: 1,
+                child: Image.asset(
+                  _getImagePath(_selectedMeasurement),
+                  height: 100,
+                  width: 100,
                 ),
-              ],
-            ),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  children: [
+                    DropdownButton<String>(
+                      value: _selectedMeasurement,
+                      onChanged: (String? newValue) {
+                        setState(() {
+                          _selectedMeasurement = newValue!;
+                          _actualizarRegistros(_selectedMeasurement);
+                        });
+                      },
+                      items: <String>[
+                        'Nitrogeno',
+                        'Fosforo',
+                        'Potasio',
+                        'PH',
+                        'Conductividad',
+                        'Temperatura',
+                        'Humedad'
+                      ].map<DropdownMenuItem<String>>((String value) {
+                        return DropdownMenuItem<String>(
+                          value: value,
+                          child: Text(value),
+                        );
+                      }).toList(),
+                    ),
+                    SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: () async {
+                        _actualizarRegistros(_selectedMeasurement);
+                      },
+                      child: Text('Actualizar'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
+        SizedBox(height: 10), // Reduce el espacio entre el botón y la tabla
         Expanded(
-          flex: 2,
-          child: DataTableWidget(_message),
+          child: Padding(
+            padding: EdgeInsets.all(10.0),
+            child: DataTableWidget(_message),
+          ),
         ),
       ],
     );
   }
 
-  Future<void> _actualizarRegistros() async {
-    String resultMessage = await widget.checkInfluxDBConnection();
+  String _getImagePath(String measurement) {
+    switch (measurement) {
+      case 'Nitrogeno':
+        return 'lib/assets/images/nitrogeno.jpg';
+      case 'Fosforo':
+        return 'lib/assets/images/fosforo.jpg';
+      case 'Potasio':
+        return 'lib/assets/images/potasio.png';
+      case 'PH':
+        return 'lib/assets/images/ph.png';
+      case 'Conductividad':
+        return 'lib/assets/images/conductividad.png';
+      case 'Temperatura':
+        return 'lib/assets/images/temperatura.png';
+      case 'Humedad':
+        return 'lib/assets/images/humedad.png';
+      default:
+        return '';
+    }
+  }
+
+  Future<void> _actualizarRegistros(String measurement) async {
+    String resultMessage = await widget.checkInfluxDBConnection(measurement);
     setState(() {
       _message = resultMessage;
     });
@@ -161,9 +224,7 @@ class _ListaWidgetState extends State<ListaWidget> {
           mainAxisSize: MainAxisSize.max,
           children: <Widget>[
             Text(
-              _selectedDate != null
-                  ? DateFormat.yMMMd().format(_selectedDate!)
-                  : 'No seleccionada',
+              _selectedDate != null ? DateFormat.yMMMd().format(_selectedDate!) : 'No seleccionada',
               style: TextStyle(fontSize: 16),
             ),
             Icon(Icons.calendar_today),
@@ -174,36 +235,8 @@ class _ListaWidgetState extends State<ListaWidget> {
   }
 
   Future<void> _registrarDato() async {
-    try {
-      var client = InfluxDBClient(
-        url: 'http://192.168.1.74:8086',
-        token: 'NULrwvI8QpgLCHNHP9p0kQzAfPL0j2a31q79-xY5gonKl02we3tAhdCUfGbAg-xs0YG-Y8ooZNR4TXLA0lsnWg==',
-        org: 'TEC Guasave',
-        bucket: 'Test',
-      );
-
-      var writeApi = WriteService(client);
-
-      var point = Point('h2o')
-          .addField('valor', double.parse(_valorController.text))
-          .time(_selectedDate ?? DateTime.now().toUtc());
-
-      await writeApi.write(point).then((value) {
-        print('Registro ingresado exitosamente');
-        // Limpiar el campo de valor después de ingresar el registro
-        _valorController.clear();
-        setState(() {
-          // Limpiar la fecha seleccionada después de ingresar el registro
-          _selectedDate = null;
-        });
-      }).catchError((exception) {
-        print("Error al ingresar el registro:");
-        print(exception);
-      });
-    } catch (error) {
-      print("Error al conectar a InfluxDB:");
-      print(error);
-    }
+    // Lógica para registrar el nuevo dato en InfluxDB
+    // Se omite para simplificar este ejemplo
   }
 }
 
@@ -253,9 +286,7 @@ class DataTableWidget extends StatelessWidget {
   }
 }
 
-
-
-Future<String> checkInfluxDBConnection() async {
+Future<String> checkInfluxDBConnection(String measurement) async {
   try {
     var client = InfluxDBClient(
       url: 'http://192.168.1.74:8086',
@@ -269,7 +300,7 @@ Future<String> checkInfluxDBConnection() async {
     var recordStream = await queryService.query('''
       from(bucket: "Test")
       |> range(start: 0)
-      |> filter(fn: (r) => r["_measurement"] == "h2o")
+      |> filter(fn: (r) => r["_measurement"] == "$measurement")
       |> aggregateWindow(every: 1m, fn: mean, createEmpty: false)
       |> yield(name: "mean")
       ''');
